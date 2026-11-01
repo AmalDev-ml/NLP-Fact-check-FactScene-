@@ -1,0 +1,17 @@
+flask>=3.0.3
+ddgs>=0.1.0
+trafilatura>=1.12.0
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-google-genai>=1.0.0
+langchain-groq>=0.1.0
+sentence-transformers>=3.0.0
+transformers>=4.49.0
+torch>=2.1.0
+nltk>=3.8.1
+requests>=2.32.0
+numpy>=1.26.0
+sentencepiece>=0.2.0
+protobuf>=5.27.0
+python-dotenv>=1.0.0

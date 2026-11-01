@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FactSense — Live Web AI Claim & News Verification</title>
+  <meta name="description" content="Verify claims and news articles from the LIVE INTERNET with LangChain LLM reasoning, DuckDuckGo & Wikipedia live search, Trafilatura page reading, and DeBERTa NLI cross-check." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .claims-table-card { margin-top: 10px; overflow-x: auto; }
+    .claims-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+    .claims-table th { padding: 12px 16px; font-weight: 600; color: var(--text-m); border-bottom: 1px solid var(--border); text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }
+    .claims-table td { padding: 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); vertical-align: top; }
+    .claims-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    .verdict-pill { display: inline-block; padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap; }
+    .pill-green { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34, 211, 160, 0.3); }
+    .pill-red { background: var(--red-dim); color: var(--red); border: 1px solid rgba(242, 92, 110, 0.3); }
+    .pill-purple { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); }
+    .pill-amber { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .claim-item-text { font-weight: 500; color: var(--text); line-height: 1.5; margin-bottom: 6px; }
+    .claim-evidence-text { font-size: 12.5px; color: var(--text-m); background: rgba(255, 255, 255, 0.03); padding: 8px 12px; border-radius: 6px; border-left: 3px solid var(--accent); margin-top: 6px; }
+    .claim-source-tag { font-size: 11.5px; color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-weight: 500; }
+    .claim-source-tag:hover { text-decoration: underline; color: var(--accent-2); }
+    .claim-rationale { font-size: 12px; color: #94a3b8; margin-top: 6px; }
+    .xai-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .xai-tag { font-size: 10.5px; padding: 2px 6px; border-radius: 4px; font-family: var(--mono); }
+    .xai-tag-pos { background: rgba(34, 211, 160, 0.15); color: var(--green); border: 1px solid rgba(34, 211, 160, 0.25); }
+    .xai-tag-neg { background: rgba(242, 92, 110, 0.15); color: var(--red); border: 1px solid rgba(242, 92, 110, 0.25); }
+    .timings-badge-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .timing-badge { font-size: 11px; font-family: var(--mono); background: rgba(255, 255, 255, 0.05); padding: 3px 8px; border-radius: 6px; color: var(--text-m); border: 1px solid var(--border); }
+    .stats-chip-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .stats-chip { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: rgba(255, 255, 255, 0.06); color: var(--text-m); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .cross-check-chip { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.06); color: var(--text-m); font-family: var(--mono); margin-top: 4px; display: inline-block; }
+  </style>
+</head>
+<body>
+
+  <!-- Animated background blobs -->
+  <div class="bg-blob blob-1"></div>
+  <div class="bg-blob blob-2"></div>
+  <div class="bg-blob blob-3"></div>
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">FactSense</span>
+        <span class="logo-badge">Live Web RAG</span>
+      </div>
+      <div class="header-meta">
+        <span class="model-chip">Live Web Search · LLM Reasoning · DeBERTa Cross-Check</span>
+        <span id="model-status" class="status-dot loading" title="Checking model status…"></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main ── -->
+  <main class="main">
+
+    <!-- Degraded Mode Alert Banner (shown if no LLM key is configured) -->
+    <div id="degraded-banner" class="degraded-banner hidden">
+      ⚠️ <b>Degraded Mode Active:</b> No external LLM API key configured. FactSense is running in local heuristic mode. Results may be less reliable and confidence is capped at 60%. Add <code>GEMINI_API_KEY</code> or <code>GROQ_API_KEY</code> to <code>.env</code> for full reasoning.
+    </div>
+
+    <!-- Hero -->
+    <section class="hero">
+      <h1 class="hero-title">
+        Verify claims with<br/>
+        <span class="gradient-text">the Live Internet</span>
+      </h1>
+      <p class="hero-sub">
+        FactSense searches the live web in real time (DuckDuckGo, Wikipedia, Google Fact Check),
+        reads and reranks full web pages, and delivers objective evidence-grounded judgments with cited quotes and URLs.
+      </p>
+    </section>
+
+    <!-- Input Card -->
+    <section class="input-section">
+      <div class="card input-card">
+        <label for="article-input" class="input-label">
+          <span class="label-icon">🌐</span> Paste Full Article or Claim to Verify
+        </label>
+        <textarea
+          id="article-input"
+          class="article-textarea"
+          placeholder="Paste a news article or enter any statement to verify...&#10;&#10;Examples:&#10;• &quot;Narendra Modi is the Prime Minister of India.&quot;&#10;• &quot;Rahul Gandhi is the Prime Minister of India.&quot;&#10;• &quot;Water boils at 100 degrees Celsius at sea level.&quot;"
+          rows="7"
+          maxlength="8000"
+        ></textarea>
+        <div class="sample-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 6px 0;">
+          <span style="font-size:12px;color:var(--text-d);align-self:center;">Quick examples:</span>
+          <button type="button" class="sample-chip" onclick="setExample('AI tools make students score 40% higher\n\nA small self-reported survey of one course showed a 40% increase in test scores.')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;">⚖️ Headline Exaggeration (Misleading)</button>
+          <button type="button" class="sample-chip" onclick="setExample('Narendra Modi is the Prime Minister of India.')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;">🇮🇳 Narendra Modi (PM)</button>
+          <button type="button" class="sample-chip" onclick="setExample('A Gazette circulating on social media, purportedly issued by the Ministry of Finance, declares every Saturday a public holiday for PSU banks.')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;">📜 Viral Circular / Hoax</button>
+          <button type="button" class="sample-chip" onclick="setExample('India gained independence in 1947. Narendra Modi was the first Prime Minister of India.')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;">⚡ Mixed True & False (Misleading)</button>
+          <button type="button" class="sample-chip" onclick="setExample('Water boils at 100 degrees Celsius at sea level.')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;">🔬 Boiling Point of Water</button>
+          <button type="button" class="sample-chip" onclick="setExample('The Earth is flat.')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:var(--text);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;">🛑 Flat Earth Myth</button>
+        </div>
+        <div class="input-footer">
+          <span id="char-count" class="char-count">0 / 8,000</span>
+          <button id="analyze-btn" class="analyze-btn" onclick="analyzeArticle()">
+            <span class="btn-icon" id="btn-icon">🔍</span>
+            <span class="btn-text" id="btn-text">Verify Claim</span>
+            <span class="btn-spinner hidden" id="btn-spinner">◌</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Loading State with Live Pipeline Stages -->
+    <section id="loading-section" class="loading-section hidden">
+      <div class="loading-card card">
+        <div class="loading-animation">
+          <div class="pulse-ring ring-1"></div>
+          <div class="pulse-ring ring-2"></div>
+          <div class="pulse-ring ring-3"></div>
+          <div class="pulse-core">⚡</div>
+        </div>
+        <div class="loading-steps">
+          <div id="step-1" class="step step-active">
+            <span class="step-dot"></span>
+            <span class="step-text" id="step-text-1">1. Extracting check-worthy factual claims & headline…</span>
+          </div>
+          <div id="step-2" class="step">
+            <span class="step-dot"></span>
+            <span class="step-text" id="step-text-2">2. Searching the live web (DuckDuckGo, Wikipedia, Serper)…</span>
+          </div>
+          <div id="step-3" class="step">
+            <span class="step-dot"></span>
+            <span class="step-text" id="step-text-3">3. Reading web pages with Trafilatura & Cross-Encoder reranking…</span>
+          </div>
+          <div id="step-4" class="step">
+            <span class="step-dot"></span>
+            <span class="step-text" id="step-text-4">4. Classifying evidence stances & evaluating verdict…</span>
+          </div>
+          <div id="step-5" class="step">
+            <span class="step-dot"></span>
+            <span class="step-text" id="step-text-5">5. Writing grounded factual explanation…</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Error State -->
+    <section id="error-section" class="error-section hidden">
+      <div class="error-card card">
+        <span class="error-icon">⚠️</span>
+        <p id="error-message" class="error-message">Something went wrong.</p>
+        <button class="retry-btn" onclick="resetUI()">Try Again</button>
+      </div>
+    </section>
+
+    <!-- ── Results Section ── -->
+    <section id="results-section" class="results-section hidden">
+
+      <!-- Overall Article Verdict Banner -->
+      <div id="verdict-card" class="card verdict-card">
+        <div class="verdict-header">
+          <div id="verdict-icon" class="verdict-icon"></div>
+          <div class="verdict-meta">
+            <span class="verdict-label">Overall Verification Verdict</span>
+            <h2 id="verdict-text" class="verdict-text"></h2>
+            <div class="stats-chip-row" id="verdict-stats-chips"></div>
+          </div>
+          <div id="confidence-badge" class="confidence-badge"></div>
+        </div>
+
+        <!-- Confidence probability distribution bars -->
+        <div class="confidence-bars">
+          <div class="conf-bar-row">
+            <span class="conf-bar-label">SUPPORTED</span>
+            <div class="conf-bar-track">
+              <div id="bar-supported" class="conf-bar-fill bar-green"></div>
+            </div>
+            <span id="prob-supported" class="conf-bar-pct">–</span>
+          </div>
+          <div class="conf-bar-row">
+            <span class="conf-bar-label">REFUTED</span>
+            <div class="conf-bar-track">
+              <div id="bar-refuted" class="conf-bar-fill bar-red"></div>
+            </div>
+            <span id="prob-refuted" class="conf-bar-pct">–</span>
+          </div>
+          <div class="conf-bar-row">
+            <span class="conf-bar-label">MISLEADING</span>
+            <div class="conf-bar-track">
+              <div id="bar-misleading" class="conf-bar-fill bar-purple"></div>
+            </div>
+            <span id="prob-misleading" class="conf-bar-pct">–</span>
+          </div>
+          <div class="conf-bar-row">
+            <span class="conf-bar-label">INSUFFICIENT</span>
+            <div class="conf-bar-track">
+              <div id="bar-insufficient" class="conf-bar-fill bar-amber"></div>
+            </div>
+            <span id="prob-insufficient" class="conf-bar-pct">–</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Failed Parts Alert Banner (shows when article is MISLEADING or REFUTED) -->
+      <div id="failed-parts-container" class="hidden"></div>
+
+      <!-- Framing Analysis Card (shows when headline framing discrepancy or issues detected) -->
+      <div id="framing-card" class="card framing-card hidden">
+        <div class="card-heading">
+          <span class="card-icon">⚖️</span>
+          <span>Headline Framing Analysis</span>
+          <span id="framing-severity-badge" class="severity-badge severity-minor">Minor</span>
+        </div>
+        <div class="framing-comparison-grid">
+          <div class="framing-box framing-headline">
+            <span class="framing-box-label">What Headline Implies</span>
+            <div id="framing-headline-text" class="framing-text">–</div>
+          </div>
+          <div class="framing-box framing-body">
+            <span class="framing-box-label">What Body Text Actually Says</span>
+            <div id="framing-body-text" class="framing-text">–</div>
+          </div>
+        </div>
+        <div id="framing-issues-container" class="framing-issues-container hidden">
+          <span class="framing-box-label" style="color:var(--red);">Identified Framing Issues</span>
+          <div id="framing-issues-list"></div>
+        </div>
+      </div>
+
+      <!-- Per-Claim Breakdown Table -->
+      <div class="card claims-table-card">
+        <div class="card-heading" style="margin-bottom:12px;">
+          <span class="card-icon">📋</span>
+          <span>Per-Claim Verification Breakdown</span>
+          <span style="font-size:12px;color:var(--text-m);margin-left:auto;" id="claims-summary-count"></span>
+        </div>
+        <table class="claims-table">
+          <thead>
+            <tr>
+              <th style="width:33%;">Extracted Claim</th>
+              <th style="width:19%;">Verdict & Conf.</th>
+              <th style="width:48%;">Cited Evidence & Live Web Sources</th>
+            </tr>
+          </thead>
+          <tbody id="claims-table-body">
+            <!-- Dynamic claim rows populated by script.js -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Primary Evidence & Rationale Summary -->
+      <div class="results-grid" style="margin-top:20px;">
+        <div class="card info-card">
+          <div class="card-heading">
+            <span class="card-icon">💬</span>
+            <span>Focus Claim</span>
+          </div>
+          <p id="claim-text" class="claim-text"></p>
+        </div>
+
+        <div class="card info-card" id="evidence-card">
+          <div class="card-heading">
+            <span class="card-icon">🌐</span>
+            <span id="evidence-heading-title">Primary Cited Evidence</span>
+            <span id="evidence-badge-chip" style="display:none;margin-left:auto;font-size:11px;padding:2px 8px;border-radius:12px;"></span>
+          </div>
+          <p id="evidence-text" class="evidence-text"></p>
+          <a id="evidence-link" class="evidence-link" href="#" target="_blank" rel="noopener">
+            <span>Read full live source →</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Human-Readable Explanation -->
+      <div class="card explanation-card">
+        <div class="card-heading">
+          <span class="card-icon">🧠</span>
+          <span>Comprehensive Verification Explanation</span>
+        </div>
+        <div class="explainer-block">
+          <p id="explanation-text" class="explanation-text explainer-body-text"></p>
+
+          <div id="explainer-true-box" class="explainer-section hidden">
+            <div class="explainer-subheading true-title">
+              <span>✓ What Is Actually True & Verified Facts</span>
+            </div>
+            <p id="explainer-true-text" class="explainer-body-text"></p>
+          </div>
+
+          <div id="explainer-why-box" class="explainer-section hidden">
+            <div class="explainer-subheading why-title">
+              <span>⚠ Why It Is Wrong or Misleading</span>
+            </div>
+            <ul id="explainer-why-list" class="explainer-why-list"></ul>
+          </div>
+
+          <div id="explainer-unverified-box" class="explainer-section hidden">
+            <div class="explainer-subheading unverified-title">
+              <span>? Unverified Aspects & Missing Details</span>
+            </div>
+            <p id="explainer-unverified-text" class="explainer-body-text"></p>
+          </div>
+
+          <div id="explainer-confidence-box" class="explainer-section hidden" style="background:transparent;border:none;padding:0;">
+            <p id="explainer-confidence-text" style="font-size:12px;color:var(--text-m);font-style:italic;"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Web Evidence Cards across Credibility Tiers -->
+      <div class="card" id="all-evidence-section" style="margin-top:20px;display:none;">
+        <div class="card-heading">
+          <span class="card-icon">📚</span>
+          <span>Retrieved Web Evidence & Source Credibility Tiers</span>
+          <span style="font-size:12px;color:var(--text-m);margin-left:auto;" id="evidence-cards-count"></span>
+        </div>
+        <div class="evidence-grid" id="evidence-cards-container">
+          <!-- Populated by script.js -->
+        </div>
+      </div>
+
+      <!-- Feature Attribution / XAI -->
+      <div class="card lime-card">
+        <div class="card-heading">
+          <span class="card-icon">🔬</span>
+          <span>Salient Token Overlap & Factual Highlights</span>
+          <span class="lime-subtitle">Key terms connecting claim with cited passages</span>
+        </div>
+        <div id="lime-chart" class="lime-chart"></div>
+        <div class="lime-legend">
+          <span class="legend-item"><span class="legend-dot green-dot"></span> Supports verdict</span>
+          <span class="legend-item"><span class="legend-dot red-dot"></span> Against verdict</span>
+        </div>
+      </div>
+
+      <!-- Execution Stage Latencies -->
+      <div class="card" style="padding:16px 20px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text-m);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em;">
+          Pipeline Execution Latency:
+        </div>
+        <div class="timings-badge-group" id="timings-group">
+          <!-- Dynamic timing badges -->
+        </div>
+      </div>
+
+      <!-- Timing row & Actions -->
+      <div class="timing-row">
+        <span class="timing-text">⏱ Verification completed in <span id="elapsed-time"></span></span>
+        <button class="new-analysis-btn" onclick="resetUI()">New Analysis</button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ── Footer ── -->
+  <footer class="footer">
+    <p>
+      FactSense 2.0 · Live Search via <a href="https://duckduckgo.com" target="_blank">DuckDuckGo</a> & <a href="https://www.wikipedia.org" target="_blank">Wikipedia API</a>
+      · Page Reading via <a href="https://trafilatura.readthedocs.io/" target="_blank">Trafilatura</a>
+      · Reranking via <a href="https://huggingface.co/cross-encoder/ms-marco-MiniLM-L-6-v2" target="_blank">ms-marco-MiniLM</a>
+      · Reasoning via <a href="https://ai.google.dev/" target="_blank">LangChain LLM</a>
+    </p>
+  </footer>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
